@@ -44,7 +44,8 @@ pub fn create_subscription_detailed(
         &false,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
     );
 
     if status != SubscriptionStatus::Active {
@@ -86,7 +87,8 @@ pub fn create_subscription_with_merchant(
         &false,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
     );
 
     if status != SubscriptionStatus::Active {
@@ -127,7 +129,8 @@ pub fn create_active_subscription(
         &false,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
     );
 
     if prepaid > 0 {

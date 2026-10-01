@@ -1,9 +1,9 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::{EnvTestString, Events}, Env, Address, symbol_short, String};
+use soroban_sdk::{testutils::Address as _, Env, Address};
 use subscription_vault::{
-    types::{DataKey, Subscription, SubscriptionStatus, SUB_TTL_THRESHOLD, SUB_TTL_EXTEND_TO},
-    subscription::extend_subscription_ttl,
+    DataKey, Subscription, SubscriptionStatus,
+    SUB_TTL_THRESHOLD, SUB_TTL_EXTEND_TO, extend_subscription_ttl,
 };
 
 #[test]
@@ -29,6 +29,10 @@ fn bench_ttl_extension_cost() {
         expires_at: None,
         grace_start_timestamp: None,
         cancel_at: None,
+        expires_at_ledger: None,
+        sub_account_label: None,
+        auto_renew: true,
+        auto_renew_disabled_at: None,
     };
     
     env.storage().persistent().set(&key, &sub);

@@ -193,8 +193,9 @@ fn run_sequence(seed: u64) {
                         &false,
                         &None::<i128>,
                         &None::<u64>,
-                        &None::<Address>,
-                    );
+                                        &None::<u32>,
+                                        &None::<soroban_sdk::Symbol>,
+);
                     assert_eq!(
                         res,
                         Err(Ok(Error::CreditLimitExceeded)),
@@ -218,8 +219,9 @@ fn run_sequence(seed: u64) {
                         &false,
                         &None::<i128>,
                         &None::<u64>,
-                        &None::<Address>,
-                    );
+                                        &None::<u32>,
+                                        &None::<soroban_sdk::Symbol>,
+);
                     model.active.push((id, amount));
 
                     // Invariant (2): an accepted increase never over-extends a
@@ -342,8 +344,9 @@ fn overflow_at_i128_boundary_yields_error() {
         &false,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
-    );
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
+);
     assert_eq!(
         h.client.get_subscriber_exposure(&h.subscriber, &h.token),
         i128::MAX,
@@ -359,8 +362,9 @@ fn overflow_at_i128_boundary_yields_error() {
         &false,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
-    );
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
+);
     assert_eq!(
         h.client
             .try_get_subscriber_exposure(&h.subscriber, &h.token),
@@ -383,8 +387,9 @@ fn limit_shrink_below_exposure_has_no_clawback() {
         &false,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
-    );
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
+);
     let exposure = h.client.get_subscriber_exposure(&h.subscriber, &h.token);
     assert_eq!(exposure, 10_000);
 
@@ -413,8 +418,9 @@ fn limit_shrink_below_exposure_has_no_clawback() {
         &false,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
-    );
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
+);
     assert_eq!(
         res,
         Err(Ok(Error::CreditLimitExceeded)),
@@ -452,8 +458,9 @@ fn exposure_is_isolated_per_token() {
         &false,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
-    );
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
+);
     h.client.create_subscription_with_token(
         &h.subscriber,
         &h.merchant,
@@ -463,7 +470,9 @@ fn exposure_is_isolated_per_token() {
         &false,
         &None::<i128>,
         &None::<u64>,
-    );
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
+);
 
     // Each token reports only its own exposure.
     assert_eq!(
@@ -490,8 +499,9 @@ fn exposure_is_isolated_per_token() {
         &false,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
-    );
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
+);
     assert_eq!(
         blocked,
         Err(Ok(Error::CreditLimitExceeded)),
@@ -508,7 +518,9 @@ fn exposure_is_isolated_per_token() {
         &false,
         &None::<i128>,
         &None::<u64>,
-    );
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
+);
     assert!(
         ok.is_ok(),
         "token B subscription must succeed: token A's limit must not bind token B",

@@ -29,13 +29,11 @@ use soroban_sdk::{
     token, Address, BytesN, Env, String,
 };
 use subscription_vault::{
-    types::{
-        SubscriptionStatus, UsageLimits, MAX_METADATA_KEYS,
-    },
+    SubscriptionStatus, UsageLimits, MAX_METADATA_KEYS,
     SubscriptionVault, SubscriptionVaultClient,
 };
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const AMOUNT: i128 = 1_000_000;
 const INTERVAL: u64 = 30 * 24 * 60 * 60;
@@ -43,7 +41,7 @@ const DEPOSIT: i128 = 50_000_000;
 const MIN_TOPUP: i128 = 500_000;
 const MAX_DELTA_TOLERANCE_PCT: f64 = 10.0;
 
-// ── Fixture Helper ─────────────────────────────────────────────────────────────
+// â”€â”€ Fixture Helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 struct ScenarioBudget {
     cold_cpu: u64,
@@ -99,7 +97,7 @@ fn get_scenario_budget(scenario_name: &str) -> ScenarioBudget {
     }
 }
 
-// ── Setup Helpers ──────────────────────────────────────────────────────────────
+// â”€â”€ Setup Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 fn setup_env() -> (Env, SubscriptionVaultClient<'static>, Address, Address) {
     let env = Env::default();
@@ -151,7 +149,8 @@ fn create_and_fund_sub(
         &usage_enabled,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
     );
 
     let token_admin = token::StellarAssetClient::new(env, token);
@@ -170,7 +169,7 @@ struct ChargeMetrics {
     write_entries: u64,
 }
 
-// ── Measurement Logic ─────────────────────────────────────────────────────────
+// â”€â”€ Measurement Logic â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Measures cold path cost: Subscription and related keys are read from persistent storage.
 fn measure_cold_charge(
@@ -273,7 +272,7 @@ fn assert_cold_warm_metrics(
     }
 }
 
-// ── Bench Tests ───────────────────────────────────────────────────────────────
+// â”€â”€ Bench Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// **Variant 1**: Standard active subscription baseline.
 #[test]
@@ -345,7 +344,7 @@ fn bench_charge_cold_vs_warm_max_metadata() {
     for i in 0..MAX_METADATA_KEYS {
         let key_str = format!("meta_key_{:02}", i);
         let key = String::from_str(&env_cold, &key_str);
-        client_cold.set_metadata(&subscriber, &sub_id_cold, &key, &max_val);
+        client_cold.set_metadata(&sub_id_cold, &subscriber, &key, &max_val);
     }
 
     env_cold
@@ -372,7 +371,7 @@ fn bench_charge_cold_vs_warm_max_metadata() {
     for i in 0..MAX_METADATA_KEYS {
         let key_str = format!("meta_key_{:02}", i);
         let key = String::from_str(&env_warm, &key_str);
-        client_warm.set_metadata(&subscriber_warm, &sub_id_warm, &key, &max_val_warm);
+        client_warm.set_metadata(&sub_id_warm, &subscriber_warm, &key, &max_val_warm);
     }
 
     env_warm
@@ -402,12 +401,20 @@ fn bench_charge_cold_vs_warm_usage_enabled() {
 
     // Configure usage limits
     let limits = UsageLimits {
+        merchant: merchant.clone(),
         burst_min_interval_secs: 10,
         rate_window_secs: 3600,
         rate_limit_max_calls: Some(100),
         usage_cap_units: Some(10_000_000),
     };
-    client_cold.set_usage_limits(&merchant, &sub_id_cold, &limits);
+    client_cold.configure_usage_limits(
+        &merchant,
+        &sub_id_cold,
+        &limits.rate_limit_max_calls,
+        &limits.rate_window_secs,
+        &limits.burst_min_interval_secs,
+        &limits.usage_cap_units,
+    );
 
     env_cold
         .ledger()
@@ -428,7 +435,14 @@ fn bench_charge_cold_vs_warm_usage_enabled() {
         &token_warm,
         true,
     );
-    client_warm.set_usage_limits(&merchant_warm, &sub_id_warm, &limits);
+    client_warm.configure_usage_limits(
+        &merchant_warm,
+        &sub_id_warm,
+        &limits.rate_limit_max_calls,
+        &limits.rate_window_secs,
+        &limits.burst_min_interval_secs,
+        &limits.usage_cap_units,
+    );
 
     env_warm
         .ledger()
@@ -446,8 +460,6 @@ fn bench_charge_cold_vs_warm_grace_period() {
     let merchant = Address::generate(&env_cold);
     setup_merchant(&env_cold, &client_cold, &merchant);
 
-    // Configure global grace period (e.g. 7 days)
-    client_cold.set_grace_period(&(7 * 86400));
 
     let sub_id_cold = client_cold.create_subscription(
         &subscriber,
@@ -457,7 +469,8 @@ fn bench_charge_cold_vs_warm_grace_period() {
         &false,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
     );
 
     // First charge attempt with 0 balance -> moves to GracePeriod
@@ -485,7 +498,6 @@ fn bench_charge_cold_vs_warm_grace_period() {
     let subscriber_warm = Address::generate(&env_warm);
     let merchant_warm = Address::generate(&env_warm);
     setup_merchant(&env_warm, &client_warm, &merchant_warm);
-    client_warm.set_grace_period(&(7 * 86400));
 
     let sub_id_warm = client_warm.create_subscription(
         &subscriber_warm,
@@ -495,7 +507,8 @@ fn bench_charge_cold_vs_warm_grace_period() {
         &false,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
     );
 
     env_warm

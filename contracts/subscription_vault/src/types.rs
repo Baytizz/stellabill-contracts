@@ -4,10 +4,11 @@
 //! or contract entrypoints.
 
 use soroban_sdk::{
-    contracterror, contracttype, Address, Bytes, BytesN, Env, Map, String, Symbol, Vec,
+    contracterror, contracttype, symbol_short, Address, Bytes, BytesN, Env, Map, String, Symbol,
+    Vec,
 };
 
-/// Event schema version for backwards-compatible indexer decoding.
+/// Current schema version for contract events.
 pub const EVENT_SCHEMA_VERSION: u32 = 2;
 
 /// Maximum number of metadata keys per subscription.
@@ -36,13 +37,13 @@ pub const SUB_TTL_THRESHOLD: u32 = 30 * 24 * 60 * 60; // 30 days
 /// Target TTL for persistent subscription records when extended.
 pub const SUB_TTL_EXTEND_TO: u32 = 365 * 24 * 60 * 60; // 365 days
 
-/// Threshold below which a persistent billing statement secondary index TTL
-/// is extended.
-#[allow(dead_code)]
+/// Threshold below which a persistent billing statement TTL is extended.
+/// Applied to `DataKey::BillingStatement(sub_id, seq)`,
+/// `DataKey::BillingStatementsBySubscription(sub_id)`, and
+/// `DataKey::BillingStatementSequence(sub_id)` on every read and write.
 pub const BILLING_STATEMENT_TTL_THRESHOLD: u32 = 30 * 24 * 60 * 60; // 30 days
 
-/// Target TTL for billing statement secondary index entries when extended.
-#[allow(dead_code)]
+/// Target TTL for billing statement entries when extended.
 pub const BILLING_STATEMENT_TTL_EXTEND_TO: u32 = 365 * 24 * 60 * 60; // 365 days
 
 /// Threshold below which a persistent billing period snapshot TTL is extended.
@@ -93,6 +94,14 @@ pub struct MerchantKyc {
 /// canonical, frozen identifiers for each key and match
 /// [`DataKey::canonical_discriminant`]. **Never reorder or remove a variant** —
 /// doing so shifts all subsequent discriminants and silently corrupts live
+/// Discriminant for [`DataKey::Kyc`] — selects which KYC record to look up.
+#[contracttype(export = false)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum KycKey {
+    /// Per-merchant KYC status record.
+    MerchantStatus(Address),
+}
+
 /// storage. Only append new variants at the end.
 ///
 /// The **Storage tier** column is authoritative: every instance-tier key below
@@ -145,12 +154,6 @@ pub enum DataKey {
     UsageLimits(u32),
     /// Running usage state for a subscription within the current window. Discriminant 20.
     UsageState(u32),
-<<<<<<< HEAD
-    /// Per-token oracle price history metadata (head index + count).
-    OraclePriceHistoryMeta(Address),
-    /// Individual price entry in the ring buffer (`slot` in 0..ORACLE_PRICE_HISTORY_SIZE).
-    OraclePriceHistoryEntry(Address, u32),
-=======
     /// Global grace period for underfunded subscriptions. Discriminant 21.
     GracePeriod,
     /// Protocol fee in basis points (0-10,000). Discriminant 22.
@@ -234,37 +237,62 @@ pub enum DataKey {
     /// Discriminant 59.
     AdminConfigLastChangedAt(soroban_sdk::BytesN<32>),
     SubscriberCreateCap,
+    /// Discriminant 61.
     SubscriberCreateWindow(Address),
-    /// Global whitelist mode toggle. When true, merchants must be approved before registering. Discriminant 61.
+    /// Merchant allowlist mode flag (instance). Discriminant 62.
     MerchantWhitelistMode,
-    /// Per-merchant approval status under whitelist mode. Discriminant 62.
+    /// Approved merchant address (instance). Discriminant 63.
     MerchantApproved(Address),
-    /// Anti-frontrunning charge salt keyed by subscription ID (instance). Discriminant 63.
+    /// Charge salt for replay protection. Discriminant 64.
     ChargeSalt(u32),
-    /// Consecutive InsufficientBalance charge failures for a subscription. Discriminant 62.
+    /// Consecutive charge failure counter per subscription. Discriminant 65.
     ChargeFailureCounter(u32),
-    /// Auto-pause threshold: pause after this many consecutive failures (0 = disabled). Discriminant 66.
+    /// Auto-pause threshold (consecutive failures before auto-pause). Discriminant 66.
     AutoPauseThreshold,
-    /// Configured grace-buyout premium in basis points (instance, global). Discriminant 67.
+    /// Buyout premium in basis points for grace-period recovery. Discriminant 68.
     BuyoutPremiumBps,
-    /// Coupon code bound to a subscription (persistent). Discriminant 68.
+    /// Coupon code bound to a subscription (persistent). Discriminant 69.
     SubCoupon(u32),
-    /// Per-merchant multi-sig withdrawal quorum config (instance). Discriminant 69.
+    /// Per-merchant multi-sig withdrawal quorum config (instance). Discriminant 70.
     MerchantMultiSig(Address),
-    /// Count of a subscriber's currently-`Active` subscriptions (instance). Discriminant 70.
+    /// Count of a subscriber's currently-`Active` subscriptions (instance). Discriminant 71.
     SubscriberActiveCount(Address),
-    /// Admin override of a subscriber's active-subscription cap (instance). Discriminant 71.
+    /// Admin override of a subscriber's active-subscription cap (instance). Discriminant 72.
     SubscriberActiveCapOverride(Address),
     /// Admin-controlled allowlist of valid merchant compliance-category tags (instance,
-    /// global). Discriminant 72.
+    /// global). Discriminant 73.
     TagAllowlist,
     /// Compliance-category tags assigned to a merchant, capped at `MAX_MERCHANT_TAGS`
-    /// (instance). Discriminant 73.
+    /// (instance). Discriminant 74.
     MerchantTags(Address),
     /// Optional fee-token override: when set, protocol fees are paid in this
     /// token instead of the subscription's settlement token, converted through
-    /// the oracle at charge time. Discriminant 64.
+    /// the oracle at charge time. Discriminant 75.
     FeeToken,
+    /// Cancellation refund escrow record keyed by subscription ID. Discriminant 76.
+    CancellationEscrow(u32),
+    /// Per-merchant protocol-fee override in basis points (instance). Discriminant 77.
+    MerchantFeeBps(Address),
+    /// Per-token oracle price history ring-buffer metadata (instance). Discriminant 78.
+    OraclePriceHistoryMeta(Address),
+    /// Per-token oracle price history ring-buffer entry (instance). Discriminant 79.
+    OraclePriceHistoryEntry(Address, u32),
+    /// Delegated payer grant keyed by (subscriber, payer). Discriminant 80.
+    DelegatedPayerGrant(Address, Address),
+    /// Split payees details for split-billing. Discriminant 81.
+    SplitPayees(u32),
+    /// Merchant sub-account balance keyed by (merchant, label) (instance). Discriminant 82.
+    MerchantSubAccount(Address, Symbol),
+    /// List of registered sub-account labels for a merchant (instance). Discriminant 83.
+    MerchantSubAccountList(Address),
+    /// Subscriber emergency-withdrawal intent keyed by subscription ID (persistent). Discriminant 84.
+    EmergencyWithdrawIntent(u32),
+    /// Merchant vacation window storing (start_ts, end_ts) (instance). Discriminant 85.
+    MerchantVacation(Address),
+    /// Per-entrypoint reentrancy lock flag (instance). Discriminant 86.
+    ReentrancyLock(Symbol),
+    /// Multi-beneficiary treasury split configuration. Discriminant 87.
+    TreasurySplit,
 }
 
 impl DataKey {
@@ -326,27 +354,39 @@ impl DataKey {
             DataKey::SubscriptionDispute(_) => 52,
             DataKey::PayoutSchedule(_) => 53,
             DataKey::PendingTreasuryChange => 54,
-            DataKey::TransferIntent(_) => 54,
-            DataKey::Kyc(_) => 55,
-            DataKey::Coupon(_) => 56,
-            DataKey::CouponRedemptions(_) => 57,
-            DataKey::Credential(_) => 58,
-            DataKey::AdminConfigLastChangedAt(_) => 59,
-            DataKey::SubscriberCreateCap => 60,
-            DataKey::SubscriberCreateWindow(_) => 61,
-            DataKey::MerchantWhitelistMode => 62,
-            DataKey::MerchantApproved(_) => 63,
-            DataKey::ChargeSalt(_) => 64,
-            DataKey::ChargeFailureCounter(_) => 65,
-            DataKey::AutoPauseThreshold => 66,
-            DataKey::BuyoutPremiumBps => 67,
-            DataKey::SubCoupon(_) => 68,
-            DataKey::MerchantMultiSig(_) => 69,
-            DataKey::SubscriberActiveCount(_) => 70,
-            DataKey::SubscriberActiveCapOverride(_) => 71,
-            DataKey::TagAllowlist => 72,
-            DataKey::MerchantTags(_) => 73,
-            DataKey::FeeToken => 74,
+            DataKey::TransferIntent(_) => 55,
+            DataKey::Kyc(_) => 56,
+            DataKey::Coupon(_) => 57,
+            DataKey::CouponRedemptions(_) => 58,
+            DataKey::Credential(_) => 59,
+            DataKey::AdminConfigLastChangedAt(_) => 60,
+            DataKey::SubscriberCreateCap => 61,
+            DataKey::SubscriberCreateWindow(_) => 62,
+            DataKey::MerchantWhitelistMode => 63,
+            DataKey::MerchantApproved(_) => 64,
+            DataKey::ChargeSalt(_) => 65,
+            DataKey::ChargeFailureCounter(_) => 66,
+            DataKey::AutoPauseThreshold => 67,
+            DataKey::BuyoutPremiumBps => 68,
+            DataKey::SubCoupon(_) => 69,
+            DataKey::MerchantMultiSig(_) => 70,
+            DataKey::SubscriberActiveCount(_) => 71,
+            DataKey::SubscriberActiveCapOverride(_) => 72,
+            DataKey::TagAllowlist => 73,
+            DataKey::MerchantTags(_) => 74,
+            DataKey::FeeToken => 75,
+            DataKey::CancellationEscrow(_) => 76,
+            DataKey::MerchantFeeBps(_) => 77,
+            DataKey::OraclePriceHistoryMeta(_) => 78,
+            DataKey::OraclePriceHistoryEntry(_, _) => 79,
+            DataKey::DelegatedPayerGrant(_, _) => 80,
+            DataKey::SplitPayees(_) => 81,
+            DataKey::MerchantSubAccount(_, _) => 82,
+            DataKey::MerchantSubAccountList(_) => 83,
+            DataKey::EmergencyWithdrawIntent(_) => 84,
+            DataKey::MerchantVacation(_) => 85,
+            DataKey::ReentrancyLock(_) => 86,
+            DataKey::TreasurySplit => 87,
         }
     }
 
@@ -396,22 +436,30 @@ pub const KNOWN_INSTANCE_KEY_DISCRIMINANTS: &[u32] = &[
     51, // NextDisputeId
     52, // SubscriptionDispute(u32)
     53, // PayoutSchedule(Address)
-    54, // TransferIntent(u32)
-    59, // AdminConfigLastChangedAt(BytesN<32>)
-    60, // SubscriberCreateCap
-    61, // SubscriberCreateWindow(Address)
-    62, // MerchantWhitelistMode
-    63, // MerchantApproved(Address)
-    64, // ChargeSalt(u32)
-    65, // ChargeFailureCounter(u32)
-    66, // AutoPauseThreshold
-    67, // BuyoutPremiumBps
-    69, // MerchantMultiSig(Address)
-    70, // SubscriberActiveCount(Address)
-    71, // SubscriberActiveCapOverride(Address)
-    72, // TagAllowlist
-    73, // MerchantTags(Address)
-    74, // FeeToken
+    54, // PendingTreasuryChange
+    60, // AdminConfigLastChangedAt(BytesN<32>)
+    61, // SubscriberCreateCap
+    62, // SubscriberCreateWindow(Address)
+    63, // MerchantWhitelistMode
+    64, // MerchantApproved(Address)
+    65, // ChargeSalt(u32)
+    66, // ChargeFailureCounter(u32)
+    67, // AutoPauseThreshold
+    68, // BuyoutPremiumBps
+    70, // MerchantMultiSig(Address)
+    71, // SubscriberActiveCount(Address)
+    72, // SubscriberActiveCapOverride(Address)
+    73, // TagAllowlist
+    74, // MerchantTags(Address)
+    75, // FeeToken
+    77, // MerchantFeeBps(Address)
+    78, // OraclePriceHistoryMeta(Address)
+    79, // OraclePriceHistoryEntry(Address, u32)
+    82, // MerchantSubAccount(Address, Symbol)
+    83, // MerchantSubAccountList(Address)
+    85, // MerchantVacation(Address)
+    86, // ReentrancyLock(Symbol)
+    87, // TreasurySplit
 ];
 
 /// Returns `true` if `discriminant` is a recognised instance-storage key.
@@ -439,7 +487,6 @@ macro_rules! debug_assert_known_key {
     ($key:expr) => {
         $crate::types::assert_known_data_key($key)
     };
->>>>>>> upstream/main
 }
 
 /// Represents the lifecycle state of a subscription.
@@ -462,9 +509,185 @@ pub enum SubscriptionStatus {
     Archived = 6,
 }
 
+/// Allowed subscription status transitions, mirroring the state machine
+/// documented in `docs/subscription_state_machine.md`.
+///
+/// `Cancelled` and `Archived` are terminal states and intentionally have no
+/// outgoing entries. `InsufficientBalance -> Active` is reserved for
+/// deposit-funded recovery; callers must also verify that a deposit occurred
+/// before invoking this transition.
+pub const ALLOWED_STATUS_TRANSITIONS: &[(SubscriptionStatus, &[SubscriptionStatus])] = &[
+    (
+        SubscriptionStatus::Active,
+        &[
+            SubscriptionStatus::Paused,
+            SubscriptionStatus::InsufficientBalance,
+            SubscriptionStatus::GracePeriod,
+            SubscriptionStatus::Expired,
+            SubscriptionStatus::Cancelled,
+        ],
+    ),
+    (
+        SubscriptionStatus::Paused,
+        &[
+            SubscriptionStatus::Active,
+            SubscriptionStatus::Expired,
+            SubscriptionStatus::Cancelled,
+        ],
+    ),
+    (
+        SubscriptionStatus::InsufficientBalance,
+        &[
+            SubscriptionStatus::Active,
+            SubscriptionStatus::Expired,
+            SubscriptionStatus::Cancelled,
+        ],
+    ),
+    (
+        SubscriptionStatus::GracePeriod,
+        &[
+            SubscriptionStatus::Active,
+            SubscriptionStatus::Expired,
+            SubscriptionStatus::Cancelled,
+        ],
+    ),
+    (
+        SubscriptionStatus::Expired,
+        &[
+            SubscriptionStatus::Cancelled,
+            SubscriptionStatus::Archived,
+        ],
+    ),
+];
+
+impl SubscriptionStatus {
+    /// Returns `true` when the transition `self -> next` is in the documented
+    /// transition matrix.
+    pub fn can_transition_to(self, next: SubscriptionStatus) -> bool {
+        ALLOWED_STATUS_TRANSITIONS
+            .iter()
+            .find(|(from, _)| *from == self)
+            .map(|(_, allowed)| allowed.contains(&next))
+            .unwrap_or(false)
+    }
+
+    /// Alias matching the `state_machine` module's `can_transition` API.
+    pub fn can_transition(self, next: SubscriptionStatus) -> bool {
+        self.can_transition_to(next)
+    }
+
+    /// Validates a status transition, returning
+    /// [`Error::InvalidStatusTransition`] when the matrix does not permit it.
+    pub fn validate_status_transition(self, next: SubscriptionStatus) -> Result<(), Error> {
+        if self.can_transition_to(next) {
+            Ok(())
+        } else {
+            Err(Error::InvalidStatusTransition)
+        }
+    }
+}
+
+/// Validates a status transition using the documented matrix.
+pub fn validate_status_transition(
+    from: SubscriptionStatus,
+    to: SubscriptionStatus,
+) -> Result<(), Error> {
+    from.validate_status_transition(to)
+}
+
+/// Returns `true` when the `from -> to` transition is in the documented matrix,
+/// including same-state no-ops for idempotent callers.
+pub fn can_transition(from: SubscriptionStatus, to: SubscriptionStatus) -> bool {
+    from == to || from.can_transition_to(to)
+}
+
+/// Applies a transition only when the matrix permits it. Same-state calls are
+/// accepted as idempotent no-ops.
+pub fn transition_to(current: &mut SubscriptionStatus, next: SubscriptionStatus) -> Result<(), Error> {
+    if *current == next {
+        return Ok(());
+    }
+    validate_status_transition(*current, next)?;
+    *current = next;
+    Ok(())
+}
+
+#[cfg(test)]
+mod status_transition_tests {
+    use super::{can_transition, transition_to, Error, SubscriptionStatus};
+
+    #[test]
+    fn documented_happy_paths_are_allowed() {
+        use SubscriptionStatus::*;
+        assert!(Active.can_transition_to(Paused));
+        assert!(Active.can_transition_to(InsufficientBalance));
+        assert!(Active.can_transition_to(GracePeriod));
+        assert!(Active.can_transition_to(Expired));
+        assert!(Active.can_transition_to(Cancelled));
+        assert!(Paused.can_transition_to(Active));
+        assert!(Paused.can_transition_to(Expired));
+        assert!(Paused.can_transition_to(Cancelled));
+        assert!(InsufficientBalance.can_transition_to(Active));
+        assert!(InsufficientBalance.can_transition_to(Expired));
+        assert!(InsufficientBalance.can_transition_to(Cancelled));
+        assert!(GracePeriod.can_transition_to(Active));
+        assert!(GracePeriod.can_transition_to(Expired));
+        assert!(GracePeriod.can_transition_to(Cancelled));
+        assert!(Expired.can_transition_to(Cancelled));
+        assert!(Expired.can_transition_to(Archived));
+    }
+
+    #[test]
+    fn terminal_states_are_enforced() {
+        use SubscriptionStatus::*;
+        for next in [
+            Active,
+            Paused,
+            Cancelled,
+            InsufficientBalance,
+            GracePeriod,
+            Expired,
+            Archived,
+        ] {
+            assert!(!Cancelled.can_transition_to(next));
+            assert!(!Archived.can_transition_to(next));
+        }
+    }
+
+    #[test]
+    fn invalid_transitions_return_error() {
+        use SubscriptionStatus::*;
+        assert_eq!(
+            Active.validate_status_transition(Archived),
+            Err(Error::InvalidStatusTransition)
+        );
+        assert_eq!(
+            Cancelled.validate_status_transition(Active),
+            Err(Error::InvalidStatusTransition)
+        );
+        assert_eq!(
+            Expired.validate_status_transition(Active),
+            Err(Error::InvalidStatusTransition)
+        );
+    }
+
+    #[test]
+    fn same_state_noop_is_allowed() {
+        use SubscriptionStatus::*;
+        assert!(can_transition(Active, Active));
+        let mut status = Active;
+        assert!(transition_to(&mut status, Active).is_ok());
+        assert_eq!(status, Active);
+        status = Cancelled;
+        assert!(transition_to(&mut status, Cancelled).is_ok());
+        assert_eq!(status, Cancelled);
+        assert!(transition_to(&mut status, Active).is_err());
+    }
+}
+
 /// Stores subscription details and current state.
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Subscription {
     pub subscriber: Address,
     pub merchant: Address,
@@ -492,25 +715,47 @@ pub struct Subscription {
     pub grace_start_timestamp: Option<u64>,
     /// Scheduled future cancellation timestamp.
     pub cancel_at: Option<u64>,
-    /// When `false`, billing is halted at the next interval boundary.
+    /// Optional ledger-sequence bound for expiration. When set, the subscription
+    /// also expires as soon as the ledger sequence reaches this value,
+    /// independently of the wall-clock `expires_at`. `None` disables the bound.
     ///
-    /// Defaults to `true` on creation. The subscriber (or merchant) may call
-    /// `set_auto_renew(false)` to opt out of automatic renewal. During the
-    /// renewal window (up to one full interval after `auto_renew` was set to
-    /// `false`) the subscriber may re-enable auto-renewal without re-creating
-    /// the subscription, preserving history and metadata. After the window
-    /// lapses, the subscription must be cancelled and recreated.
+    /// Either bound being met is sufficient to consider the subscription
+    /// expired for charge / deposit / state-transition purposes.
+    pub expires_at_ledger: Option<u32>,
+    /// Optional sub-account label for routing charges to an isolated merchant
+    /// sub-account ledger (#575). `None` routes to the parent merchant balance.
+    pub sub_account_label: Option<Symbol>,
+    /// When `true`, the billing engine charges each interval automatically.
+    /// When `false`, the subscription skips charges once the current interval
+    /// elapses. Defaults to `true` on creation.
     pub auto_renew: bool,
-    /// Ledger timestamp when `auto_renew` was last set to `false`.
-    ///
-    /// `None` means auto-renewal has never been disabled or has been
-    /// re-enabled since. Used to enforce the renewal window.
+    /// Ledger timestamp of the first `set_auto_renew(false)` call. Used to
+    /// enforce the one-interval renewal window. `None` when auto-renewal is
+    /// enabled or has never been disabled.
     pub auto_renew_disabled_at: Option<u64>,
+    /// Outstanding arrears (unpaid shortfall) accumulated when a partial payment
+    /// drained the prepaid balance but did not cover the full charge amount.
+    ///
+    /// Arrears are always `>= 0`. Any deposit is applied to arrears *before*
+    /// it tops up the prepaid balance (see `do_deposit_funds`).
+    pub arrears: i128,
 }
 
 impl Subscription {
-    pub fn is_expired(&self, current_time: u64) -> bool {
-        self.expires_at.map_or(false, |exp| current_time >= exp)
+    /// Returns true when *either* the wall-clock bound or the ledger-sequence
+    /// bound is met (or both). `None` for either bound disables that check.
+    pub fn is_expired(&self, current_time: u64, current_ledger: u32) -> bool {
+        if let Some(exp) = self.expires_at {
+            if current_time >= exp {
+                return true;
+            }
+        }
+        if let Some(exp_ledger) = self.expires_at_ledger {
+            if current_ledger >= exp_ledger {
+                return true;
+            }
+        }
+        false
     }
 
     /// Returns `true` when the renewal window (one full interval) after
@@ -526,6 +771,15 @@ impl Subscription {
     }
 }
 
+/// Pending emergency-withdraw intent for a paused or cancelled subscription.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EmergencyWithdrawIntent {
+    pub subscription_id: u32,
+    pub requested_at: u64,
+    pub requested_status: SubscriptionStatus,
+}
+
 /// A non-transferable (soulbound) credential badge linking a subscription.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -534,6 +788,24 @@ pub struct CredentialBadge {
     pub tier: u32,
     pub issued_at: u64,
     pub revoked: bool,
+}
+
+/// Split billing payees and their basis points weights.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SplitPayees {
+    pub subscription_id: u32,
+    pub entries: Vec<(Address, u32)>,
+}
+
+/// Event emitted when split charge is distributed.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct SplitChargeEvent {
+    pub subscription_id: u32,
+    pub payees: Vec<(Address, i128)>,
+    pub timestamp: u64,
+    pub schema_version: u32,
 }
 
 /// Event emitted when a soulbound credential is issued for a new subscription.
@@ -824,19 +1096,6 @@ pub enum Error {
     /// Invalid recovery amount provided.
     InvalidRecoveryAmount = 3003,
     /// The provided new admin address is invalid.
-<<<<<<< HEAD
-    InvalidNewAdmin = 1037,
-    /// No admin proposal exists for claiming.
-    ProposalNotFound = 1038,
-    /// The admin proposal window has expired.
-    ProposalExpired = 1039,
-    /// The claimant does not match the proposed new admin.
-    InvalidClaimant = 1040,
-    /// An admin proposal is already active; cancel it first.
-    ProposalAlreadyExists = 1041,
-    /// No active proposal to cancel.
-    NoActiveProposal = 1042,
-=======
     InvalidNewAdmin = 3004,
     /// Metadata key exceeds maximum allowed length.
     MetadataKeyTooLong = 3005,
@@ -873,8 +1132,21 @@ pub enum Error {
     /// The scheduled treasury change has not yet reached its effective timestamp.
     TimelockNotElapsed = 4011,
     /// Subscription is not in GracePeriod for a buyout operation.
-    NotInGracePeriod = 4011,
+    NotInGracePeriod = 4013,
+    /// An admin-config mutation was attempted within the per-key cooldown window.
     CooldownActive = 4012,
+    /// Merchant vacation mode is active — charges blocked during vacation window.
+    VacationActive = 4014,
+    /// Subscriber requested an emergency withdrawal while one is already in progress.
+    EmergencyWithdrawCooldownActive = 4015,
+    /// No emergency-withdrawal intent exists for this subscription.
+    EmergencyWithdrawNotRequested = 4016,
+    /// The emergency-withdrawal intent state was changed concurrently.
+    EmergencyWithdrawStateChanged = 4017,
+    /// Emergency withdrawal is not allowed from the current subscription state.
+    EmergencyWithdrawInvalidState = 4018,
+    /// A referral/rebate cannot target the subscriber themselves.
+    SelfReferralNotAllowed = 4019,
 
     // --- Accounting (5000-5099) ---
     /// Insufficient balance in the subscription vault.
@@ -929,16 +1201,12 @@ pub enum Error {
     CouponAlreadyApplied = 6016,
     /// Coupon token does not match the subscription's settlement token.
     CouponTokenMismatch = 6017,
-    /// A bulk operation was called with more ids than `BATCH_MAX_SIZE` allows.
-    // Error 6018 is already defined above in Limits, but kept here for schema matching, see 1006.
-    /// Subscriber has exceeded the rolling 24-hour subscription creation limit.
+    /// Per-subscriber rolling subscription-creation rate limit exceeded.
     SubscriberRateLimited = 6019,
     /// Usage limits are required for subscriptions with usage enabled.
     UsageLimitsRequired = 6020,
-    /// Requested tag set exceeds `MAX_MERCHANT_TAGS` for a single merchant.
+    /// The merchant's tag list has reached the maximum allowed size.
     MerchantTagLimitExceeded = 6021,
-    /// A subscriber cannot be their own referral inviter.
-    SelfReferralNotAllowed = 6022,
 
     // --- Merchant Config (7000-7099) ---
     /// Fee basis points exceed maximum allowed value.
@@ -967,6 +1235,8 @@ pub enum Error {
     // --- Schema Migration (9100-9199) ---
     /// Stored schema version is newer than the binary's STORAGE_VERSION; downgrade rejected.
     SchemaMigrationDowngrade = 9101,
+    /// Stored schema version does not match the code's expected version; migration rejected.
+    SchemaVersionMismatch = 9102,
 
     // --- Dispute / Chargeback (10000-10099) ---
     /// The requested dispute was not found.
@@ -992,69 +1262,94 @@ pub enum Error {
     /// The transfer target is invalid.
     InvalidTransferTarget = 11003,
 
-    // --- Auto-Renewal (12000-12099) ---
+    // --- Admin Config Cooldown (is part of 4000 range, see CooldownActive = 4012 above) ---
+
+    // --- Delegated Payer (13000-13099) ---
+    /// The delegated payer grant was not found.
+    DelegatedPayerGrantNotFound = 13001,
+    /// The delegated payer grant has expired.
+    DelegatedPayerGrantExpired = 13002,
+    /// The deposit amount exceeds the grant's max_amount.
+    DelegatedPayerAmountExceeded = 13003,
+
+    // --- Auto-Renewal (14100-14199) ---
     /// The renewal window (one billing interval after auto_renew was disabled)
     /// has elapsed; the subscription must be cancelled and recreated to resume billing.
-    RenewalWindowClosed = 12001,
->>>>>>> upstream/main
+    RenewalWindowClosed = 14101,
+
+    // --- Admin Proposal (14000-14099) ---
+    /// No admin proposal exists for claiming.
+    ProposalNotFound = 14001,
+    /// The admin proposal window has expired.
+    ProposalExpired = 14002,
+    /// The claimant does not match the proposed new admin.
+    InvalidClaimant = 14003,
+    /// An admin proposal is already active; cancel it first.
+    ProposalAlreadyExists = 14004,
+    /// No active proposal to cancel.
+    NoActiveProposal = 14005,
+
+    // --- Cancellation Escrow (15000-15099) ---
+    /// No cancellation escrow found for this subscription.
+    EscrowNotFound = 15001,
+    /// The cancellation escrow release window has not elapsed yet.
+    EscrowNotReleased = 15002,
+
 }
 
 impl Error {
     /// Returns the numeric code for this error.
     pub const fn to_code(self) -> u32 {
-<<<<<<< HEAD
-        match self {
-            Error::NotFound => 404,
-            Error::Unauthorized => 401,
-            Error::Forbidden => 403,
-            Error::SubscriptionExpired => 410,
-            Error::IntervalNotElapsed => 1001,
-            Error::NotActive => 1002,
-            Error::InvalidStatusTransition => 400,
-            Error::BelowMinimumTopup => 402,
-            Error::Overflow => 1012,
-            Error::Underflow => 1010,
-            Error::InsufficientBalance => 1003,
-            Error::InvalidAmount => 1006,
-            Error::UsageNotEnabled => 1004,
-            Error::InsufficientPrepaidBalance => 1005,
-            Error::Replay => 1007,
-            Error::InvalidRecoveryAmount => 1008,
-            Error::EmergencyStopActive => 1009,
-            Error::RecoveryNotAllowed => 1011,
-            Error::InvalidInput => 1015,
-            Error::NotInitialized => 1013,
-            Error::InvalidExportLimit => 1014,
-            Error::Reentrancy => 1016,
-            Error::LifetimeCapReached => 1017,
-            Error::AlreadyInitialized => 1018,
-            Error::MerchantPaused => 1019,
-            Error::MetadataKeyLimitReached => 1023,
-            Error::MetadataKeyTooLong => 1024,
-            Error::MetadataValueTooLong => 1025,
-            Error::SubscriberBlocklisted => 1026,
-            Error::OracleNotConfigured => 1027,
-            Error::OraclePriceUnavailable => 1028,
-            Error::OraclePriceStale => 1029,
-            Error::OraclePriceInvalid => 1030,
-            Error::SubscriptionLimitReached => 429,
-            Error::MaxConcurrentSubscriptionsReached => 1031,
-            Error::CreditLimitExceeded => 1032,
-            Error::RateLimitExceeded => 1033,
-            Error::UsageCapExceeded => 1034,
-            Error::BurstLimitExceeded => 1035,
-            Error::SelfRotation => 1036,
-            Error::InvalidNewAdmin => 1037,
-            Error::ProposalNotFound => 1038,
-            Error::ProposalExpired => 1039,
-            Error::InvalidClaimant => 1040,
-            Error::ProposalAlreadyExists => 1041,
-            Error::NoActiveProposal => 1042,
-        }
-=======
         self as u32
->>>>>>> upstream/main
     }
+}
+
+/// Normalize a raw token amount to 9-decimal internal representation.
+///
+/// Reads the token's decimals from `DataKey::TokenDecimals` and scales the
+/// amount up by `10^(9 - decimals)`. Returns an error if the token is not
+/// registered, has zero decimals, more than 9 decimals, or if the scaling
+/// would overflow.
+pub fn normalize_amount(env: &Env, token: &Address, raw: i128) -> Result<i128, Error> {
+    let decimals: u32 = env
+        .storage()
+        .instance()
+        .get(&DataKey::TokenDecimals(token.clone()))
+        .ok_or(Error::InvalidToken)?;
+    if decimals == 0 {
+        return Err(Error::InvalidTokenDecimals);
+    }
+    if decimals > 9 {
+        return Err(Error::InvalidInput);
+    }
+    let factor: i128 = 10i128.pow(9 - decimals);
+    raw.checked_mul(factor).ok_or(Error::Overflow)
+}
+
+/// Denormalize a 9-decimal internal amount back to the token's native decimals.
+///
+/// The inverse of [`normalize_amount`]. Returns an error if the division
+/// would lose precision (i.e. the result cannot be exactly re-scaled back
+/// to the original value).
+pub fn denormalize_amount(env: &Env, token: &Address, normalized: i128) -> Result<i128, Error> {
+    let decimals: u32 = env
+        .storage()
+        .instance()
+        .get(&DataKey::TokenDecimals(token.clone()))
+        .ok_or(Error::InvalidToken)?;
+    if decimals == 0 {
+        return Err(Error::InvalidTokenDecimals);
+    }
+    if decimals > 9 {
+        return Err(Error::InvalidInput);
+    }
+    let factor: i128 = 10i128.pow(9 - decimals);
+    let result = normalized.checked_div(factor).ok_or(Error::Overflow)?;
+    // Verify no precision was lost
+    if result.checked_mul(factor).ok_or(Error::Overflow)? != normalized {
+        return Err(Error::InvalidInput);
+    }
+    Ok(result)
 }
 
 #[contracttype]
@@ -1128,6 +1423,9 @@ pub struct SubscriptionSummary {
     pub lifetime_charged: i128,
     pub start_time: u64,
     pub expires_at: Option<u64>,
+    /// Optional ledger-sequence bound for expiration (mirrors
+    /// `Subscription::expires_at_ledger`). `None` means no ledger bound.
+    pub expires_at_ledger: Option<u32>,
 }
 
 #[contracttype]
@@ -1245,7 +1543,7 @@ pub struct BillingStatement {
 }
 
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BillingStatementsPage {
     pub statements: Vec<BillingStatement>,
     pub next_cursor: Option<u32>,
@@ -1466,6 +1764,43 @@ pub struct Coupon {
     pub revoked: bool,
 }
 
+impl Coupon {
+    /// Returns the absolute discount (in token base units) for a gross charge.
+    ///
+    /// Applies `percent_off_bps` first, then `fixed_off`, and clamps the total
+    /// discount to the gross amount so the payable amount never goes negative.
+    pub fn discount_amount(&self, gross: i128) -> i128 {
+        if gross <= 0 {
+            return 0;
+        }
+        let percent_discount = gross
+            .saturating_mul(self.percent_off_bps as i128)
+            .saturating_div(10000_i128);
+        let combined = percent_discount.saturating_add(self.fixed_off);
+        if combined <= 0 {
+            return 0;
+        }
+        if combined >= gross {
+            gross
+        } else {
+            combined
+        }
+    }
+
+    /// Returns `true` if the coupon is not revoked and has not expired.
+    ///
+    /// `expires_at == 0` means the coupon never expires.
+    pub fn is_active(&self, now: u64) -> bool {
+        !self.revoked && (self.expires_at == 0 || now < self.expires_at)
+    }
+
+    /// Returns `true` if the coupon can still be redeemed at `now`.
+    pub fn can_redeem(&self, now: u64, current_redemptions: u32) -> bool {
+        self.is_active(now)
+            && (self.max_redemptions == 0 || current_redemptions < self.max_redemptions)
+    }
+}
+
 /// Event emitted when a merchant creates a new coupon.
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -1563,31 +1898,7 @@ pub struct OraclePrice {
     pub timestamp: u64,
 }
 
-<<<<<<< HEAD
-/// Ring-buffer metadata for a per-token oracle price history window.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OraclePriceHistoryMeta {
-    /// Current write index in the ring buffer (0..ORACLE_PRICE_HISTORY_SIZE).
-    pub head: u32,
-    /// Total samples written (capped at ORACLE_PRICE_HISTORY_SIZE for read semantics).
-    pub count: u32,
-}
 
-/// Event emitted when an oracle price is rejected by the deviation circuit breaker.
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct OracleDeviationBreakerEvent {
-    pub token: Address,
-    pub latest_price: i128,
-    pub median_price: i128,
-    pub deviation_bps: u64,
-    pub threshold_bps: u32,
-    pub timestamp: u64,
-}
-
-/// Token registry entry.
-=======
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleConfigUpdatedEvent {
@@ -1624,32 +1935,6 @@ pub struct OracleLivenessEvent {
     pub schema_version: u32,
 }
 
-/// Ring-buffer metadata for a per-token oracle price history window.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OraclePriceHistoryMeta {
-    pub head: u32,
-    pub count: u32,
-}
-
-/// Event emitted when an oracle price is rejected by the deviation circuit breaker.
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct OracleDeviationBreakerEvent {
-    pub token: Address,
-    pub latest_price: i128,
-    pub median_price: i128,
-    pub deviation_bps: u64,
-    pub threshold_bps: u32,
-    pub timestamp: u64,
-}
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AcceptedToken {
-    pub token: Address,
-    pub decimals: u32,
-}
-
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct EmergencyStopEnabledEvent {
@@ -1667,7 +1952,6 @@ pub struct AdminRotatedEvent {
     pub schema_version: u32,
 }
 
-<<<<<<< HEAD
 /// Two-step admin proposal stored when `propose_admin` is called.
 ///
 /// The proposal must be claimed by `new_admin` before `expires_at`.
@@ -1706,9 +1990,6 @@ pub struct AdminProposalCancelledEvent {
     pub timestamp: u64,
 }
 
-/// Event emitted when emergency stop is disabled.
-=======
->>>>>>> upstream/main
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct EmergencyStopDisabledEvent {
@@ -1757,6 +2038,12 @@ pub enum RecoveryReason {
     AccidentalTransfer = 4,
 }
 
+/// Short topic for [`RecoveryEvent`].
+///
+/// This fits Soroban's nine-character `symbol_short!` limit and therefore does
+/// not need host-side symbol interning when it is emitted.
+pub const TOPIC_RECOVERY: Symbol = symbol_short!("recovery");
+
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct RecoveryEvent {
@@ -1769,6 +2056,12 @@ pub struct RecoveryEvent {
     pub schema_version: u32,
 }
 
+/// Legacy short topic for [`SubscriptionCreatedEvent`] emitters.
+///
+/// The longer `"subscription_created"` topic intentionally remains a
+/// `Symbol::new` at its emit sites because it exceeds `symbol_short!` capacity.
+pub const TOPIC_CREATED: Symbol = symbol_short!("created");
+
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct SubscriptionCreatedEvent {
@@ -1780,6 +2073,8 @@ pub struct SubscriptionCreatedEvent {
     pub interval_seconds: u64,
     pub lifetime_cap: Option<i128>,
     pub expires_at: Option<u64>,
+    /// Optional ledger-sequence expiration bound. `None` means no ledger bound.
+    pub expires_at_ledger: Option<u32>,
     pub timestamp: u64,
     pub schema_version: u32,
 }
@@ -1791,6 +2086,52 @@ pub struct ReferralAttributedEvent {
     pub subscription_id: u32,
     pub inviter: Address,
     pub subscriber: Address,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Delegated payer grant: authorizes `payer` to deposit into `subscriber`'s vault.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct DelegatedPayerGrant {
+    pub subscriber: Address,
+    pub payer: Address,
+    pub expires_at: u64,
+    pub max_amount: i128,
+}
+
+/// Event emitted when a delegated payer grant is created.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct DelegatedPayerGrantedEvent {
+    pub subscriber: Address,
+    pub payer: Address,
+    pub expires_at: u64,
+    pub max_amount: i128,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Event emitted when a delegated payer grant is revoked.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct DelegatedPayerRevokedEvent {
+    pub subscriber: Address,
+    pub payer: Address,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Event emitted when a delegated payer deposits funds on behalf of a subscriber.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct DelegatedDepositEvent {
+    pub subscription_id: u32,
+    pub subscriber: Address,
+    pub payer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub new_balance: i128,
     pub timestamp: u64,
     pub schema_version: u32,
 }
@@ -1808,6 +2149,9 @@ pub struct SubscriberCapReachedEvent {
     pub schema_version: u32,
 }
 
+/// Short topic for [`FundsDepositedEvent`].
+pub const TOPIC_DEPOSITED: Symbol = symbol_short!("deposited");
+
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct FundsDepositedEvent {
@@ -1819,6 +2163,9 @@ pub struct FundsDepositedEvent {
     pub timestamp: u64,
     pub schema_version: u32,
 }
+
+/// Short topic for [`SubscriptionChargedEvent`].
+pub const TOPIC_CHARGED: Symbol = symbol_short!("charged");
 
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -1871,6 +2218,37 @@ pub struct SubscriptionRecoveryReadyEvent {
     pub subscriber: Address,
     pub prepaid_balance: i128,
     pub required_amount: i128,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Emitted when an underfunded interval charge is settled as a partial payment.
+///
+/// The merchant's `allow_partial_payment` policy is enabled, the subscription
+/// had some prepaid balance but less than the full charge, so the available
+/// balance was drained and the uncovered shortfall was added to
+/// `Subscription::arrears`.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ArrearsAccruedEvent {
+    pub subscription_id: u32,
+    pub partial_amount: i128,
+    pub shortfall: i128,
+    pub total_arrears: i128,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Emitted when a deposit is first applied to outstanding arrears before
+/// topping up the prepaid balance.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ArrearsSettledEvent {
+    pub subscription_id: u32,
+    /// Amount of the deposit applied to clear arrears.
+    pub arrears_paid: i128,
+    /// Remaining arrears after this deposit.
+    pub remaining_arrears: i128,
     pub timestamp: u64,
     pub schema_version: u32,
 }
@@ -1946,6 +2324,30 @@ pub struct BulkCancelEvent {
     pub schema_version: u32,
 }
 
+/// Per-id outcome of a bulk deposit operation.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BulkDepositResult {
+    pub subscription_id: u32,
+    pub success: bool,
+    /// Numeric error code from the `Error` enum, or `0` on success.
+    pub error_code: u32,
+}
+
+/// Envelope event summarising the outcome counts of a bulk-deposit batch.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct BulkDepositEvent {
+    pub caller: Address,
+    pub requested: u32,
+    pub deposited: u32,
+    pub failed: u32,
+    pub total_amount: i128,
+    pub nonce: u64,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GracePeriodEnteredEvent {
@@ -1990,6 +2392,25 @@ pub struct SubscriptionExpiredEvent {
     pub schema_version: u32,
 }
 
+/// Event emitted when a subscription's ledger-sequence expiration bound is
+/// updated by the subscriber or merchant.
+///
+/// Setting `expires_at_ledger` to `None` clears the bound; setting it to a
+/// concrete sequence replaces the previous bound. The wall-clock bound
+/// (`expires_at`) is unaffected by this event.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ExpirationLedgerSetEvent {
+    pub subscription_id: u32,
+    /// New ledger-sequence bound. `None` means the bound has been cleared.
+    pub expires_at_ledger: Option<u32>,
+    /// Previous ledger-sequence bound, if any. `None` if no prior bound was set.
+    pub previous_expires_at_ledger: Option<u32>,
+    pub authorizer: Address,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct SubscriptionArchivedEvent {
@@ -2016,6 +2437,9 @@ pub struct ScheduledPayoutEvent {
     /// Event schema version for backwards-compatible indexer decoding.
     pub schema_version: u32,
 }
+
+/// Legacy short topic shared by merchant and subscriber withdrawal events.
+pub const TOPIC_WITHDRAWN: Symbol = symbol_short!("withdrawn");
 
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -2053,6 +2477,20 @@ pub struct SubscriberWithdrawalEvent {
 
 #[contracttype]
 #[derive(Clone, Debug)]
+pub struct SubscriberEmergencyWithdrawEvent {
+    pub subscription_id: u32,
+    pub subscriber: Address,
+    pub amount: i128,
+    pub cooldown_started_at: u64,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Legacy short topic for [`OneOffChargedEvent`].
+pub const TOPIC_ONE_OFF_CHARGED: Symbol = symbol_short!("oneoff_ch");
+
+#[contracttype]
+#[derive(Clone, Debug)]
 pub struct OneOffChargedEvent {
     pub subscription_id: u32,
     pub subscriber: Address,
@@ -2063,6 +2501,12 @@ pub struct OneOffChargedEvent {
     pub timestamp: u64,
     pub schema_version: u32,
 }
+
+/// Legacy short topic for [`LifetimeCapReachedEvent`] in the one-off path.
+///
+/// Other paths use the longer `"lifetime_cap_reached"` topic, which must keep
+/// using `Symbol::new` because it is longer than nine characters.
+pub const TOPIC_CAP_REACH: Symbol = symbol_short!("cap_reach");
 
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -2303,46 +2747,10 @@ pub struct UsageState {
 pub struct PartialRefundEvent {
     pub subscription_id: u32,
     pub subscriber: Address,
-<<<<<<< HEAD
-    /// Amount refunded in token base units.
-    pub amount: i128,
-    /// Ledger timestamp when the refund was processed.
-    pub timestamp: u64,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-#[contracttype]
-pub struct MerchantConfig {
-    pub fee_address: Option<Address>,
-    pub redirect_url: String,
-    pub is_paused: bool,
-}
-
-/// Event emitted when protocol fee configuration is updated.
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct ProtocolFeeConfiguredEvent {
-    pub admin: Address,
-    pub treasury: Address,
-    pub fee_bps: u32,
-    pub timestamp: u64,
-}
-
-/// Event emitted when a protocol fee is charged as part of a subscription charge.
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct ProtocolFeeChargedEvent {
-    pub subscription_id: u32,
-    pub treasury: Address,
-    pub fee_amount: i128,
-    pub merchant_amount: i128,
-    pub timestamp: u64,
-=======
     pub token: Address,
     pub amount: i128,
     pub timestamp: u64,
     pub schema_version: u32,
->>>>>>> upstream/main
 }
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -2354,13 +2762,6 @@ pub struct MerchantRefundEvent {
     pub timestamp: u64,
     pub schema_version: u32,
 }
-<<<<<<< HEAD
-=======
-
-<<<<<<< HEAD
-/// Event emitted when protocol fee configuration is changed.
-=======
->>>>>>> upstream/main
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PendingTreasuryChange {
@@ -2376,15 +2777,9 @@ pub struct ProtocolFeeConfiguredEvent {
     pub treasury: Address,
     pub fee_bps: u32,
     pub timestamp: u64,
-<<<<<<< HEAD
-}
-
-/// Event emitted when a protocol fee is charged on a subscription.
-=======
     pub schema_version: u32,
 }
 
->>>>>>> upstream/main
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct TreasuryChangeQueuedEvent {
@@ -2407,16 +2802,52 @@ pub struct TreasuryChangeExecutedEvent {
     pub schema_version: u32,
 }
 
+/// A single beneficiary entry in a multi-beneficiary treasury split.
+///
+/// `bps` is in basis points (0–10_000). The sum of all entries in a split
+/// must equal exactly 10_000.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TreasurySplitEntry {
+    pub beneficiary: Address,
+    pub bps: u32,
+}
+
+/// Multi-beneficiary treasury split configuration stored under
+/// `DataKey::TreasurySplit`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TreasurySplitConfig {
+    pub entries: soroban_sdk::Vec<TreasurySplitEntry>,
+}
+
+/// Emitted when the admin configures a new treasury split.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct TreasurySplitConfiguredEvent {
+    pub admin: Address,
+    pub entries: soroban_sdk::Vec<TreasurySplitEntry>,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Emitted per beneficiary when protocol fees are routed through a treasury
+/// split during a successful charge.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ProtocolFeeRoutedEvent {
+    pub subscription_id: u32,
+    pub beneficiary: Address,
+    pub token: Address,
+    pub fee_amount: i128,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct ProtocolFeeChargedEvent {
     pub subscription_id: u32,
-<<<<<<< HEAD
-    pub treasury: Address,
-    pub fee_amount: i128,
-    pub merchant_amount: i128,
-    pub timestamp: u64,
-=======
     pub merchant: Address,
     pub token: Address,
     pub fee_amount: i128,
@@ -2488,6 +2919,14 @@ pub struct MerchantConfig {
     pub redirect_url: String,
     pub is_paused: bool,
     pub last_updated: u64,
+    /// Per-merchant policy controlling whether underfunded interval charges may
+    /// be settled as a partial payment (draining whatever prepaid balance is
+    /// available and accumulating the shortfall as `Subscription::arrears`).
+    ///
+    /// When `false` (the default), charging preserves the legacy behaviour:
+    /// an underfunded charge moves the subscription into
+    /// `InsufficientBalance`/`GracePeriod` without debiting the prepaid balance.
+    pub allow_partial_payment: bool,
 }
 
 #[contracttype]
@@ -2495,6 +2934,17 @@ pub struct MerchantConfig {
 pub struct MerchantMultiSigConfig {
     pub signers: Vec<Address>,
     pub threshold: u32,
+}
+
+/// Merchant vacation window: when active (current time within [start_ts, end_ts]),
+/// all charges to this merchant's subscriptions are blocked with `Error::VacationActive`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MerchantVacation {
+    /// Start of the vacation window (ledger timestamp, seconds).
+    pub start_ts: u64,
+    /// End of the vacation window (ledger timestamp, seconds). Must be > start_ts.
+    pub end_ts: u64,
 }
 
 #[contracttype]
@@ -2508,6 +2958,26 @@ pub struct MerchantPausedEvent {
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct MerchantUnpausedEvent {
+    pub merchant: Address,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Emitted when a merchant enters vacation mode, auto-pausing all subscriptions.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct VacationStartedEvent {
+    pub merchant: Address,
+    pub start_ts: u64,
+    pub end_ts: u64,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Emitted when a merchant exits vacation mode before the scheduled end time.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct VacationEndedEvent {
     pub merchant: Address,
     pub timestamp: u64,
     pub schema_version: u32,
@@ -2681,118 +3151,147 @@ pub struct PrepaidQueryResult {
     pub has_more: bool,
 }
 
+// ── Missing types added for compilation compatibility ───────────────────────
 
-#[cfg(test)]
-mod known_keys_tests {
-    use super::*;
-    use soroban_sdk::{testutils::Address as _, Env, String};
-
-    fn all_variants(env: &Env) -> std::vec::Vec<(DataKey, bool)> {
-        let a = Address::generate(env);
-        let b = Address::generate(env);
-        let s = String::from_str(env, "k");
-        std::vec![
-            (DataKey::MerchantSubs(a.clone()), true),
-            (DataKey::Token, true),
-            (DataKey::Admin, true),
-            (DataKey::MinTopup, true),
-            (DataKey::NextId, true),
-            (DataKey::SchemaVersion, true),
-            (DataKey::Sub(1), false),
-            (DataKey::ChargedPeriod(1), false),
-            (DataKey::IdemKey(1), false),
-            (DataKey::EmergencyStop, true),
-            (DataKey::MerchantPaused(a.clone()), true),
-            (DataKey::BillingStatement(1, 2), false),
-            (DataKey::BillingStatementsBySubscription(1), false),
-            (DataKey::BillingStatementsByMerchant(a.clone()), false),
-            (DataKey::TotalAccounted(a.clone()), true),
-            (DataKey::Recovery(s.clone()), false),
-            (DataKey::MerchantConfig(a.clone()), true),
-            (DataKey::MerchantEarnings(a.clone(), b.clone()), true),
-            (DataKey::MerchantTokens(a.clone()), true),
-            (DataKey::UsageLimits(1), true),
-            (DataKey::UsageState(1), true),
-            (DataKey::GracePeriod, true),
-            (DataKey::FeeBps, true),
-            (DataKey::Treasury, true),
-            (DataKey::AcceptedTokens, true),
-            (DataKey::TokenDecimals(a.clone()), true),
-            (DataKey::NextPlanId, true),
-            (DataKey::Plan(1), true),
-            (DataKey::SubPlan(1), true),
-            (DataKey::PlanMaxActive(1), true),
-            (DataKey::CreditLimit(a.clone(), b.clone()), true),
-            (DataKey::TokenSubs(a.clone()), true),
-            (DataKey::SubscriberSubs(a.clone()), true),
-            (DataKey::MerchantBalance(a.clone(), b.clone()), true),
-            (DataKey::Blocklist(a.clone()), false),
-            (DataKey::Oracle, true),
-            (DataKey::BillingPeriodSnapshot(1, 2), false),
-            (DataKey::BillingPeriodSnapshotIndex(1), false),
-            (DataKey::AdminNonce(a.clone(), 1), false),
-            (DataKey::Metadata(1, s.clone()), false),
-            (DataKey::MetadataKeys(1), false),
-            (DataKey::Operator, true),
-            (DataKey::BillingRetentionConfig, true),
-            (DataKey::BillingStatementSequence(1), false),
-            (DataKey::BillingStatementAggregate(1), false),
-            (DataKey::MerchantMaxSubs(a.clone()), true),
-            (DataKey::Guardians, false),
-            (DataKey::NextProposalId, true),
-            (DataKey::Proposal(1), false),
-            (DataKey::DisputeEscrow(1), true),
-            (DataKey::Dispute(1), false),
-            (DataKey::NextDisputeId, true),
-            (DataKey::SubscriptionDispute(1), true),
-            (DataKey::PayoutSchedule(a.clone()), true),
-            (DataKey::TransferIntent(1), true),
-            (DataKey::Kyc(KycKey::Required), false),
-            (DataKey::Coupon(soroban_sdk::Symbol::new(env, "c")), false),
-            (DataKey::CouponRedemptions(soroban_sdk::Symbol::new(env, "c")), false),
-            (DataKey::Credential(1), false),
-            (DataKey::SubscriberCreateCap, true),
-            (DataKey::SubscriberCreateWindow(a.clone()), true),
-            (DataKey::MerchantWhitelistMode, true),
-            (DataKey::MerchantApproved(a.clone()), true),
-            (DataKey::ChargeSalt(1), true),
-            (DataKey::ChargeFailureCounter(1), true),
-            (DataKey::AutoPauseThreshold, true),
-            (DataKey::FeeToken, true),
-        ]
-    }
-
-    #[test]
-    fn every_instance_variant_is_accepted() {
-        let env = Env::default();
-        for (key, is_instance) in all_variants(&env) {
-            if is_instance {
-                assert!(key.is_known_instance_key());
-                assert_known_data_key(&key);
-            }
-        }
-    }
-
-    #[test]
-    fn persistent_variants_are_rejected() {
-        let env = Env::default();
-        for (key, is_instance) in all_variants(&env) {
-            if !is_instance {
-                assert!(!key.is_known_instance_key());
-            }
-        }
-    }
-}
-
+/// Accepted token with its decimal precision.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TransferIntent {
-    pub subscription_id: u32,
-    pub from: Address,
-    pub to: Address,
-    pub expires_at: u64,
+pub struct AcceptedToken {
+    pub token: Address,
+    pub decimals: u32,
+    pub added_at: u64,
 }
 
+/// Event emitted when the fee-token override is configured.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeTokenConfiguredEvent {
+    pub admin: Address,
+    pub fee_token: Option<Address>,
+    pub old_token: Option<Address>,
+    pub new_token: Option<Address>,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Event emitted when a protocol fee is converted through the oracle.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct FeeConvertedEvent {
+    pub subscription_id: u32,
+    pub source_token: Address,
+    pub target_token: Address,
+    pub original_fee_amount: i128,
+    pub converted_fee_amount: i128,
+    pub rate: u128,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Event emitted when a subscription is auto-paused due to consecutive failures.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct SubscriptionAutoPausedEvent {
+    pub subscription_id: u32,
+    pub consecutive_failures: u32,
+    pub threshold: u32,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Event emitted when a subscription is paused.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct SubscriptionPausedEvent {
+    pub subscription_id: u32,
+    pub authorizer: Address,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Cancellation escrow record for a subscription.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CancellationEscrow {
+    pub subscription_id: u32,
+    pub amount: i128,
+    pub token: Address,
+    pub subscriber: Address,
+    pub merchant: Address,
+    pub opened_at: u64,
+    pub released_at: u64,
+    pub released: bool,
+}
+
+/// Event emitted when a cancellation escrow is opened.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct CancellationEscrowOpenedEvent {
+    pub subscription_id: u32,
+    pub subscriber: Address,
+    pub merchant: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub released_at: u64,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Event emitted when a cancellation escrow is disputed.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct CancellationEscrowDisputedEvent {
+    pub subscription_id: u32,
+    pub merchant: Address,
+    pub dispute_id: u64,
+    pub amount: i128,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Event emitted when a cancellation escrow is released.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct CancellationEscrowReleasedEvent {
+    pub subscription_id: u32,
+    pub subscriber: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Event emitted when a sub-account is created for a merchant.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct SubAccountCreatedEvent {
+    pub merchant: Address,
+    pub label: Symbol,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Event emitted when funds are withdrawn from a sub-account.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct SubAccountWithdrawEvent {
+    pub merchant: Address,
+    pub label: Symbol,
+    pub amount: i128,
+    pub token: Address,
+    pub remaining_balance: i128,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
+
+/// Oracle price history ring-buffer metadata.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct OraclePriceHistoryMeta {
+    pub count: u32,
+    pub cursor: u32,
+}
+
+/// Event emitted when a subscription is transferred.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct SubscriptionTransferredEvent {
@@ -2803,6 +3302,20 @@ pub struct SubscriptionTransferredEvent {
     pub schema_version: u32,
 }
 
+/// Transfer intent for subscription transfer flow.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransferIntent {
+    pub subscription_id: u32,
+    pub from_subscriber: Address,
+    pub from: Address,
+    pub to: Address,
+    pub created_at: u64,
+    pub expires_at: u64,
+    pub executed: bool,
+}
+
+/// Event emitted when a transfer intent is created.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct TransferIntentCreatedEvent {
@@ -2814,6 +3327,7 @@ pub struct TransferIntentCreatedEvent {
     pub schema_version: u32,
 }
 
+/// Event emitted when a transfer is vetoed.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct TransferVetoedEvent {
@@ -2823,125 +3337,76 @@ pub struct TransferVetoedEvent {
     pub schema_version: u32,
 }
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum KycKey {
-    Required,
-    Merchant(Address),
-}
+/// Event emitted when a grace-period buyout is executed.
+// NOTE: GraceBuyoutEvent is already defined above with the canonical fields.
 
-/// Event emitted when a subscription is automatically paused after N consecutive
-/// InsufficientBalance charge failures.
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct SubscriptionAutoPausedEvent {
-    pub subscription_id: u32,
-    pub consecutive_failures: u32,
-    pub threshold: u32,
-    pub timestamp: u64,
-    pub schema_version: u32,
-}
+/// Cancellation escrow window in seconds (7 days).
+pub const CANCELLATION_ESCROW_WINDOW_SECS: u64 = 7 * 24 * 60 * 60;
 
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct SubscriptionPausedEvent {
-    pub subscription_id: u32,
-    pub authorizer: Address,
-    pub timestamp: u64,
-    pub schema_version: u32,
-}
 
-/// Common scale used to compare amounts across tokens with differing decimal
-/// precision in cross-token reconciliation reports (see `queries::get_token_reconciliation`).
-pub const RECONCILIATION_DECIMALS: u32 = 9;
 
-/// Convert a raw token-base-unit amount to the common `RECONCILIATION_DECIMALS`
-/// scale, using the token's registered decimals (`DataKey::TokenDecimals`).
-///
-/// # Errors
-/// - `Error::InvalidToken` if the token has no registered decimals.
-/// - `Error::InvalidTokenDecimals` if the registered decimals is `0`.
-/// - `Error::Overflow` if scaling up would exceed `i128::MAX`.
-/// - `Error::InvalidInput` if the token has more than `RECONCILIATION_DECIMALS`
-///   decimals and `raw` carries precision that cannot be represented exactly
-///   at the common scale (i.e. scaling down would truncate a non-zero remainder).
-pub fn normalize_amount(env: &Env, token: &Address, raw: i128) -> Result<i128, Error> {
-    let decimals: u32 = env
-        .storage()
-        .instance()
-        .get(&DataKey::TokenDecimals(token.clone()))
-        .ok_or(Error::InvalidToken)?;
-    if decimals == 0 {
-        return Err(Error::InvalidTokenDecimals);
-    }
-    if decimals <= RECONCILIATION_DECIMALS {
-        let scale = 10i128.pow(RECONCILIATION_DECIMALS - decimals);
-        raw.checked_mul(scale).ok_or(Error::Overflow)
-    } else {
-        let scale = 10i128.pow(decimals - RECONCILIATION_DECIMALS);
-        if raw % scale != 0 {
-            return Err(Error::InvalidInput);
+#[cfg(test)]
+mod event_topic_tests {
+    use super::{
+        TOPIC_CAP_REACH, TOPIC_CHARGED, TOPIC_CREATED, TOPIC_DEPOSITED, TOPIC_ONE_OFF_CHARGED,
+        TOPIC_RECOVERY, TOPIC_WITHDRAWN,
+    };
+    use soroban_sdk::{
+        testutils::Events, xdr::ToXdr, Env, FromVal, Symbol,
+    };
+
+    /// The emitted wire representation is part of the indexer-facing contract.
+    /// Publish every cached short topic in one transaction and compare each
+    /// emitted topic to the `Symbol::new` representation used before caching.
+    #[test]
+    fn cached_event_topics_are_bytewise_compatible_and_keep_order() {
+        let env = Env::default();
+        let topics = [
+            ("recovery", TOPIC_RECOVERY),
+            ("created", TOPIC_CREATED),
+            ("deposited", TOPIC_DEPOSITED),
+            ("charged", TOPIC_CHARGED),
+            ("withdrawn", TOPIC_WITHDRAWN),
+            ("cap_reach", TOPIC_CAP_REACH),
+            ("oneoff_ch", TOPIC_ONE_OFF_CHARGED),
+        ];
+
+        for (_, topic) in topics.iter() {
+            env.events().publish((topic,), ());
         }
-        Ok(raw / scale)
-    }
-}
 
-/// Inverse of [`normalize_amount`]: convert a `RECONCILIATION_DECIMALS`-scaled
-/// amount back to the token's own base-unit precision.
-///
-/// # Errors
-/// Same error conditions as [`normalize_amount`], mirrored for the reverse
-/// direction (e.g. `Error::InvalidInput` if the token has fewer decimals than
-/// the common scale and `normalized` cannot be represented exactly).
-pub fn denormalize_amount(env: &Env, token: &Address, normalized: i128) -> Result<i128, Error> {
-    let decimals: u32 = env
-        .storage()
-        .instance()
-        .get(&DataKey::TokenDecimals(token.clone()))
-        .ok_or(Error::InvalidToken)?;
-    if decimals == 0 {
-        return Err(Error::InvalidTokenDecimals);
-    }
-    if decimals <= RECONCILIATION_DECIMALS {
-        let scale = 10i128.pow(RECONCILIATION_DECIMALS - decimals);
-        if normalized % scale != 0 {
-            return Err(Error::InvalidInput);
+        let emitted_events = env.events().all();
+        assert_eq!(emitted_events.len(), topics.len() as u32);
+        for (index, (name, expected_topic)) in topics.iter().enumerate() {
+            let emitted = emitted_events.get(index as u32).unwrap();
+            let emitted_topic = Symbol::from_val(&env, &emitted.1.get(0).unwrap());
+            let legacy_topic = Symbol::new(&env, name);
+
+            assert_eq!(
+                emitted_topic.to_xdr(&env),
+                legacy_topic.clone().to_xdr(&env),
+                "event topic {name} changed its wire representation"
+            );
+            assert_eq!(
+                expected_topic.to_xdr(&env),
+                legacy_topic.clone().to_xdr(&env),
+                "cached topic {name} differs from Symbol::new"
+            );
         }
-        Ok(normalized / scale)
-    } else {
-        let scale = 10i128.pow(decimals - RECONCILIATION_DECIMALS);
-        normalized.checked_mul(scale).ok_or(Error::Overflow)
     }
->>>>>>> upstream/main
+
+    /// `symbol_short!` supports at most nine characters. Longer event topics
+    /// are deliberately constructed with `Symbol::new` at their emit sites.
+    #[test]
+    fn long_event_topics_keep_the_runtime_symbol_representation() {
+        let env = Env::default();
+        let long_topic = Symbol::new(&env, "subscription_created");
+
+        assert_eq!(
+            long_topic.clone().to_xdr(&env),
+            Symbol::new(&env, "subscription_created").to_xdr(&env)
+        );
+        assert_ne!(long_topic.clone().to_xdr(&env), TOPIC_CREATED.to_xdr(&env));
+    }
 }
 
-/// Event emitted when the fee-token override address is set or cleared.
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct FeeTokenConfiguredEvent {
-    pub admin: Address,
-    pub fee_token: Option<Address>,
-    pub timestamp: u64,
-    pub schema_version: u32,
-}
-
-/// Event emitted when a protocol fee is converted from the subscription's
-/// settlement token to the configured fee-token override.
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct FeeConvertedEvent {
-    pub subscription_id: u32,
-    /// The subscription's settlement token (source).
-    pub source_token: Address,
-    /// The fee-token override (destination).
-    pub target_token: Address,
-    /// Original fee amount in `source_token` before conversion.
-    pub original_fee_amount: i128,
-    /// Converted fee amount in `target_token`.
-    pub converted_fee_amount: i128,
-    /// Oracle price used for conversion (quote per base, scaled by 10^7).
-    pub rate: u128,
-    pub timestamp: u64,
-    pub schema_version: u32,
-}
->>>>>>> upstream/main

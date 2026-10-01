@@ -105,8 +105,9 @@ fn create_sub(env: &Env, client: &SubscriptionVaultClient) -> u32 {
         &false,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
-    )
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
+)
 }
 
 /// Keep the contract **instance** entry alive far beyond any TTL boundary under test,

@@ -162,7 +162,9 @@ impl ChaosEnv {
             &false,        // usage_enabled = false
             &None::<i128>, // lifetime_cap
             &None::<u64>,  // expires_at
-        );
+                &None::<u32>,
+                &None::<soroban_sdk::Symbol>, // sub_account_label
+);
         self.client.deposit_funds(&id, &subscriber, &PREPAID, &None);
         (id, subscriber, merchant)
     }
@@ -316,8 +318,9 @@ fn test_backward_jump_across_grace_boundary_no_panic() {
         &false,
         &None::<i128>,
         &None::<u64>,
-        &None::<Address>,
-    );
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
+);
     ce.client.deposit_funds(&id, &subscriber, &AMOUNT, &None);
 
     // First charge — exhausts the prepaid balance

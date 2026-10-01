@@ -30,7 +30,10 @@ fn create_sub(
     subscriber: &Address,
     merchant: &Address,
 ) -> u32 {
-    client.create_subscription(subscriber, merchant, &AMOUNT, &INTERVAL, &false, &None, &None, &None::<Address>)
+    client.create_subscription(
+        subscriber, merchant, &AMOUNT, &INTERVAL, &false, &None, &None, &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
+    )
 }
 
 /// The default cap (10) blocks the 11th concurrent active subscription for
@@ -57,8 +60,9 @@ fn default_cap_blocks_the_eleventh_subscription() {
         &false,
         &None,
         &None,
-        &None::<Address>,
-    );
+        &None::<u32>,
+        &None::<soroban_sdk::Symbol>,
+);
     assert_eq!(
         result,
         Err(Ok(Error::MaxConcurrentSubscriptionsReached))
@@ -83,8 +87,8 @@ fn cancelling_frees_a_slot() {
 
     let blocked = client.try_create_subscription(
         &subscriber, &merchant, &AMOUNT, &INTERVAL, &false, &None, &None,
-        &None::<Address>,
-    );
+        &None::<u32>, &None::<soroban_sdk::Symbol>,
+);
     assert_eq!(blocked, Err(Ok(Error::MaxConcurrentSubscriptionsReached)));
 
     client.cancel_subscription(&id1, &subscriber);
